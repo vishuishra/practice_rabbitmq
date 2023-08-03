@@ -1,31 +1,36 @@
 # processor.py
-import pika
+import aio_pika
+import asyncio
 
-def process_message(message: str):
-    # Process the message, in this case, appending "World" to it
-    processed_message = message + " World"
-    return processed_message
+async def process_message(message: str):
+    # Simulate a delay in processing (you can adjust the sleep time as needed)
+    await asyncio.sleep(10)
+    return f"{message} World"
 
-def on_message(channel, method_frame, header_frame, body):
-    message = body.decode()
-    processed_message = process_message(message)
+async def on_message(message: aio_pika.IncomingMessage):
+    async with message.process():
+        body = message.body.decode()
+        processed_message = await process_message(body)
+        connection = await aio_pika.connect_robust("amqp://guest:guest@localhost/")
+        channel = await connection.channel()
+        await channel.declare_queue("output_queue")
+        
+        # Use the default exchange to publish the processed message to the output_queue
+        await channel.default_exchange.publish(
+            aio_pika.Message(body=processed_message.encode()),
+            routing_key="output_queue"
+        )
+        
+        await connection.close()
 
-    connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-    channel = connection.channel()
-    channel.queue_declare(queue="output_queue")
-    channel.basic_publish(exchange='',
-                          routing_key="output_queue",
-                          body=processed_message)
-    connection.close()
+async def main():
+    connection = await aio_pika.connect_robust("amqp://guest:guest@localhost/")
+    channel = await connection.channel()
+    input_queue = await channel.declare_queue("input_queue")
+    await input_queue.consume(on_message)
 
-def main():
-    connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-    channel = connection.channel()
-    channel.queue_declare(queue="input_queue")
-    channel.basic_consume(queue="input_queue", on_message_callback=on_message, auto_ack=True)
-
-    print(' [*] Waiting for messages. To exit press CTRL+C')
-    channel.start_consuming()
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())
+    loop.run_forever()
+    # asyncio.run(main())
