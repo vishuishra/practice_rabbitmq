@@ -1,4 +1,3 @@
-# processor.py
 import aio_pika
 import asyncio
 
