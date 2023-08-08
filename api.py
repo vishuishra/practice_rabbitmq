@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 import aio_pika
 import logging
+import asyncio,random
 
 app = FastAPI()
 
@@ -14,13 +15,13 @@ async def publish_to_queue(queue_name: str, message: str):
     )
     await connection.close()
 
+
 async def get_processed_message_from_queue(queue_name: str):
     connection = await aio_pika.connect_robust("amqp://guest:guest@localhost/")
     channel = await connection.channel()
     queue = await channel.declare_queue(queue_name)
     try:
         message = await queue.get()
-        await connection.close()
         logging.info("Message in output_queue: ",message)
         
         if message:
@@ -32,20 +33,20 @@ async def get_processed_message_from_queue(queue_name: str):
     except Exception as e:
         logging.error("output queue exception block: "+str(e),exc_info=True)
         return False, None       
-    
+    await connection.close()
     
 @app.post("/message/")
 async def get_display_message(message:str):
     try:
-        await publish_to_queue("input_queue", message)
-        logging.info ({"message": "Message sent for processing"})
-
-        processed_message = await get_processed_message_from_queue("output_queue")
         
+        await publish_to_queue("input_queue", message)
+        print({"message": f"{message} sent for processing"})
+        processed_message = await get_processed_message_from_queue("output_queue")
         if processed_message[0]:
             return {"processed_message": processed_message[1]}
         else:
             return {"message": "No processed messages available"}
+        
     except Exception as e:
         logging.error(str(e),exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
